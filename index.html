@@ -36,6 +36,15 @@
   @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
   @keyframes breathe { 0%,100%{box-shadow:0 0 0 0 rgba(232,100,80,0.3)} 50%{box-shadow:0 0 0 14px rgba(232,100,80,0)} }
   @keyframes taskEnter { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes popIn { 0%{opacity:0;transform:scale(.3) translateY(30px)} 50%{transform:scale(1.05) translateY(-4px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
+  @keyframes celebrate { 0%{transform:scale(1)} 20%{transform:scale(1.06)} 40%{transform:scale(.97)} 60%{transform:scale(1.02)} 100%{transform:scale(1)} }
+  @keyframes checkPop { 0%{transform:translateY(-50%) scale(1)} 30%{transform:translateY(-50%) scale(1.5)} 60%{transform:translateY(-50%) scale(.85)} 100%{transform:translateY(-50%) scale(1)} }
+  @keyframes strikethrough { from{width:0} to{width:100%} }
+  @keyframes shimmerDone { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  @keyframes confettiBurst {
+    0%{opacity:1;transform:translate(0,0) scale(1)}
+    100%{opacity:0;transform:translate(var(--cx),var(--cy)) scale(0)}
+  }
 
   .app {
     display:flex; flex-direction:column; height:100vh; height:100dvh;
@@ -91,7 +100,7 @@
 
   /* Task Bars */
   .task-bar {
-    position:relative; border-radius:var(--radius); padding:20px 54px 20px 38px;
+    position:relative; border-radius:var(--radius); padding:20px 54px 20px 52px;
     margin-bottom:12px; cursor:grab; touch-action:pan-y;
     transition:transform .2s,opacity .2s,box-shadow .2s;
     box-shadow:0 3px 10px rgba(0,0,0,.1); overflow:hidden;
@@ -104,7 +113,26 @@
   .task-bar:active { transform:scale(.97); box-shadow:var(--shadow-lg); }
   .task-bar.dragging { opacity:.35; transform:scale(.95); }
   .task-bar.drag-over { transform:translateY(4px); }
-  .task-bar.done-bar { opacity:.5; }
+  .task-bar.done-bar { opacity:.55; }
+  .task-bar.anim-new { animation:popIn .45s cubic-bezier(.34,1.56,.64,1) both; }
+  .task-bar.anim-done { animation:celebrate .5s ease both; }
+  .task-bar.anim-done::after {
+    content:''; position:absolute; inset:0;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent);
+    background-size:200% 100%;
+    animation:shimmerDone .8s ease both;
+    pointer-events:none;
+  }
+
+  .task-num-badge {
+    position:absolute; left:14px; top:50%; transform:translateY(-50%);
+    width:28px; height:28px; border-radius:50%;
+    background:rgba(0,0,0,.15); backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; color:white;
+    text-shadow:0 1px 2px rgba(0,0,0,.15);
+    font-variant-numeric:tabular-nums;
+  }
 
   .task-label {
     font-size:17px; font-weight:600; color:white; line-height:1.35;
@@ -120,16 +148,24 @@
     color:white; font-size:14px; font-weight:700; transition:background .15s,border-color .15s;
   }
   .task-check.checked { background:rgba(255,255,255,.4); border-color:rgba(255,255,255,.85); }
+  .task-check.anim-check { animation:checkPop .35s ease both; }
 
   .task-del {
-    position:absolute; left:10px; top:8px;
-    width:22px; height:22px; border-radius:50%;
-    border:none; background:rgba(0,0,0,.18);
+    position:absolute; right:50px; top:50%; transform:translateY(-50%);
+    width:24px; height:24px; border-radius:50%;
+    border:none; background:rgba(0,0,0,.15);
     color:rgba(255,255,255,.8); font-size:12px; font-weight:600;
     cursor:pointer; display:flex; align-items:center; justify-content:center;
     transition:background .15s;
   }
   .task-del:active { background:rgba(0,0,0,.35); }
+
+  /* Confetti particles */
+  .confetti {
+    position:absolute; width:8px; height:8px; border-radius:2px;
+    pointer-events:none; z-index:10;
+    animation:confettiBurst .6s ease-out forwards;
+  }
 
   /* Bottom */
   .bottom-area { flex-shrink:0; padding-top:8px; display:flex; flex-direction:column; align-items:center; gap:14px; }
@@ -313,21 +349,35 @@ function flash(m,t='info'){const e=document.getElementById('toast');e.textConten
 function getColor(i){return COLORS[i%COLORS.length]}
 function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 
+let lastAction=null; // Track what triggered the render: 'add', 'done', 'undone', or null
+
 function render(){
   const list=document.getElementById('taskList'),empty=document.getElementById('emptyState'),sub=document.getElementById('subtitle');
   const done=tasks.filter(t=>t.done).length;
   sub.textContent=tasks.length===0?'No tasks yet':`${tasks.length} task${tasks.length!==1?'s':''} · ${done} done`;
-  if(tasks.length===0){empty.style.display='';list.querySelectorAll('.task-bar').forEach(e=>e.remove());return}
+  if(tasks.length===0){empty.style.display='';list.querySelectorAll('.task-bar').forEach(e=>e.remove());lastAction=null;return}
   empty.style.display='none';
   const f=document.createDocumentFragment();
   tasks.forEach((task,idx)=>{
     const bar=document.createElement('div');
-    bar.className='task-bar'+(task.done?' done-bar':'');
+    const isNewlyAdded=lastAction==='add'&&idx===tasks.length-1;
+    const isNewlyDone=lastAction==='done'&&task._justDone;
+    bar.className='task-bar'+(task.done?' done-bar':'')+(isNewlyAdded?' anim-new':'')+(isNewlyDone?' anim-done':'');
     bar.style.background=getColor(task.ci??idx);
-    bar.style.animation=`taskEnter .3s ease both`;
-    bar.style.animationDelay=(idx*30)+'ms';
+    if(!isNewlyAdded&&!isNewlyDone){
+      bar.style.animation=`taskEnter .3s ease both`;
+      bar.style.animationDelay=(idx*30)+'ms';
+    }
     bar.draggable=true;bar.dataset.idx=idx;
-    bar.innerHTML=`<span class="task-label${task.done?' struck':''}">${escHtml(task.text)}</span><button class="task-del" data-action="delete">✕</button><button class="task-check${task.done?' checked':''}" data-action="toggle">${task.done?'✓':''}</button>`;
+    bar.innerHTML=`<span class="task-num-badge">${idx+1}</span><span class="task-label${task.done?' struck':''}">${escHtml(task.text)}</span><button class="task-del" data-action="delete">✕</button><button class="task-check${isNewlyDone?' anim-check':''}${task.done?' checked':''}" data-action="toggle">${task.done?'✓':''}</button>`;
+
+    // Spawn confetti particles when done
+    if(isNewlyDone){
+      delete task._justDone;
+      setTimeout(()=>{
+        spawnConfetti(bar);
+      },100);
+    }
 
     bar.addEventListener('dragstart',()=>{dragSrcIdx=idx;bar.classList.add('dragging')});
     bar.addEventListener('dragend',()=>{dragSrcIdx=null;bar.classList.remove('dragging');list.querySelectorAll('.drag-over').forEach(e=>e.classList.remove('drag-over'))});
@@ -348,11 +398,36 @@ function render(){
   });
   list.querySelectorAll('.task-bar').forEach(e=>e.remove());
   list.appendChild(f);
+  lastAction=null;
 }
 
-function addTask(text){const t=text.trim();if(!t)return;tasks.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),text:t,done:false,ci:tasks.length});saveTasks();render();flash(`Added: "${t}"`,'success');document.getElementById('taskInput').value='';setTimeout(()=>{document.getElementById('taskList').scrollTop=9999},100)}
+function spawnConfetti(bar){
+  const colors=['#FFD700','#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8','#F7DC6F','#BB8FCE'];
+  const rect=bar.getBoundingClientRect();
+  const barRect=bar.offsetParent?.getBoundingClientRect()||{left:0,top:0};
+  for(let i=0;i<12;i++){
+    const dot=document.createElement('div');
+    dot.className='confetti';
+    dot.style.background=colors[Math.floor(Math.random()*colors.length)];
+    dot.style.left=(rect.width*0.7)+'px';
+    dot.style.top='50%';
+    const angle=Math.random()*Math.PI*2;
+    const dist=40+Math.random()*60;
+    dot.style.setProperty('--cx',(Math.cos(angle)*dist)+'px');
+    dot.style.setProperty('--cy',(Math.sin(angle)*dist)+'px');
+    dot.style.animationDelay=(Math.random()*0.15)+'s';
+    bar.appendChild(dot);
+    setTimeout(()=>dot.remove(),800);
+  }
+}
+
+function addTask(text){const t=text.trim();if(!t)return;tasks.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),text:t,done:false,ci:tasks.length});lastAction='add';saveTasks();render();flash(`Added: "${t}"`,'success');document.getElementById('taskInput').value='';setTimeout(()=>{document.getElementById('taskList').scrollTop=9999},100)}
 function removeTask(i){const n=tasks[i]?.text;tasks.splice(i,1);saveTasks();render();flash(`Removed: "${n}"`,'info')}
-function toggleDone(i){tasks[i].done=!tasks[i].done;saveTasks();render()}
+function toggleDone(i){
+  tasks[i].done=!tasks[i].done;
+  if(tasks[i].done){lastAction='done';tasks[i]._justDone=true}
+  saveTasks();render();
+}
 function moveTask(a,b){const[item]=tasks.splice(a,1);tasks.splice(b,0,item);saveTasks();render()}
 
 async function startListening(mode){
@@ -377,79 +452,107 @@ async function startListening(mode){
     return;
   }
 
-  recognition=new SR();
-  recognition.continuous=true;        // Keep listening until user stops
-  recognition.interimResults=true;
-  recognition.lang='en-US';
-  recognition.maxAlternatives=1;
-
   const ov=document.getElementById('transcriptOverlay'),lb=document.getElementById('transcriptLabel'),tx=document.getElementById('transcriptText'),mic=document.getElementById('micBtn');
 
-  let silenceTimer=null;
-  let finalTranscript='';
-  let lastResultTime=Date.now();
+  let finalText='';
+  let gotResult=false;
+  let userStopped=false;
+  let restartCount=0;
+  const maxRestarts=5;
 
-  function resetSilenceTimer(){
-    clearTimeout(silenceTimer);
-    lastResultTime=Date.now();
-    // Auto-stop after 3s of silence (gives you time to pause and think)
-    silenceTimer=setTimeout(()=>{
-      if(recognition&&listening)recognition.stop();
-    }, mode==='add'?3000:4000); // commands get more time
+  function createRecognition(){
+    const r=new SR();
+    r.continuous=false;       // Single utterance — clean results
+    r.interimResults=true;
+    r.lang='en-US';
+    r.maxAlternatives=1;
+
+    r.onstart=()=>{
+      listening=true;
+      if(restartCount===0){
+        ov.style.display='';
+        lb.innerHTML=mode==='command'
+          ?'<span class="wave">●</span> Voice Command — tap to stop'
+          :'<span class="wave">●</span> Listening — tap to stop';
+        tx.textContent='Speak now...';
+        if(mode==='add')mic.classList.add('listening');
+      }
+    };
+
+    r.onresult=e=>{
+      gotResult=true;
+      // Only use the LAST result set — no concatenation
+      const last=e.results[e.results.length-1];
+      const transcript=last[0].transcript;
+      if(last.isFinal){
+        finalText=transcript;
+        tx.textContent=finalText;
+      }else{
+        tx.textContent=transcript;
+      }
+    };
+
+    r.onend=()=>{
+      // If user manually stopped or we got a final result, finish up
+      if(userStopped||finalText){
+        finish();
+        return;
+      }
+      // If we got a partial result but no final, use what we have
+      if(gotResult&&tx.textContent&&tx.textContent!=='Speak now...'){
+        finalText=tx.textContent;
+        finish();
+        return;
+      }
+      // No result yet — auto-restart to keep listening (handles brief pauses)
+      if(restartCount<maxRestarts){
+        restartCount++;
+        try{r.start()}catch(e){finish()}
+        return;
+      }
+      // Gave up
+      finish();
+    };
+
+    r.onerror=(e)=>{
+      if(e.error==='no-speech'){
+        // Just silence — auto restart
+        if(!userStopped&&restartCount<maxRestarts){
+          restartCount++;
+          try{r.start()}catch(ex){finish()}
+          return;
+        }
+        finish();
+        return;
+      }
+      if(e.error==='aborted')return;
+      listening=false;mic.classList.remove('listening');ov.style.display='none';
+      const msgs={
+        'not-allowed':'Microphone permission denied — check browser settings',
+        'audio-capture':'No microphone found',
+        'network':'Network error — speech recognition needs internet',
+        'service-not-allowed':'Speech service not allowed — try opening in Chrome directly'
+      };
+      flash(msgs[e.error]||'Voice error: '+e.error,'danger');
+    };
+
+    return r;
   }
 
-  recognition.onstart=()=>{
-    listening=true;
-    finalTranscript='';
-    ov.style.display='';
-    lb.innerHTML=mode==='command'
-      ?'<span class="wave">●</span> Voice Command — tap overlay to stop'
-      :'<span class="wave">●</span> Listening — tap overlay to stop';
-    tx.textContent='...';
-    if(mode==='add')mic.classList.add('listening');
-    resetSilenceTimer();
-  };
-
-  recognition.onresult=e=>{
-    let interim='';
-    finalTranscript='';
-    for(let i=0;i<e.results.length;i++){
-      if(e.results[i].isFinal){
-        finalTranscript+=e.results[i][0].transcript;
-      }else{
-        interim+=e.results[i][0].transcript;
-      }
-    }
-    tx.textContent=finalTranscript||interim||'...';
-    resetSilenceTimer();
-  };
-
-  recognition.onend=()=>{
+  function finish(){
     listening=false;
-    clearTimeout(silenceTimer);
     mic.classList.remove('listening');
-    const ft=(finalTranscript||tx.textContent||'').trim();
     ov.style.display='none';
-    if(mode==='add'&&ft&&ft!=='...')addTask(ft);
-    else if(mode==='command'&&ft&&ft!=='...')processCommand(ft.toLowerCase());
-  };
+    const text=(finalText||'').trim();
+    if(mode==='add'&&text)addTask(text);
+    else if(mode==='command'&&text)processCommand(text.toLowerCase());
+    else if(!text&&!userStopped)flash('No speech detected — try again','info');
+  }
 
-  recognition.onerror=(e)=>{
-    // 'no-speech' is not fatal in continuous mode — just keep going
-    if(e.error==='no-speech')return;
-    listening=false;clearTimeout(silenceTimer);mic.classList.remove('listening');ov.style.display='none';
-    const msgs={
-      'not-allowed':'Microphone permission denied — check browser settings',
-      'audio-capture':'No microphone found',
-      'network':'Network error — speech recognition needs internet',
-      'aborted':'Voice input cancelled',
-      'service-not-allowed':'Speech service not allowed — try opening in Chrome directly'
-    };
-    flash(msgs[e.error]||'Voice error: '+e.error,'danger');
-  };
+  recognition=createRecognition();
 
-  // Tap the overlay to stop listening manually
-  ov.onclick=()=>{if(recognition&&listening)recognition.stop()};
+  // Tap overlay to stop
+  ov.onclick=()=>{userStopped=true;if(recognition)recognition.stop()};
 
   try{recognition.start()}catch(e){flash('Could not start voice: '+e.message,'danger')}
 }
