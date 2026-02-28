@@ -462,7 +462,7 @@ async function startListening(mode){
 
   function createRecognition(){
     const r=new SR();
-    r.continuous=false;       // Single utterance — clean results
+    r.continuous=false;
     r.interimResults=true;
     r.lang='en-US';
     r.maxAlternatives=1;
@@ -481,14 +481,12 @@ async function startListening(mode){
 
     r.onresult=e=>{
       gotResult=true;
-      // Only use the LAST result set — no concatenation
-      const last=e.results[e.results.length-1];
-      const transcript=last[0].transcript;
-      if(last.isFinal){
+      // ONLY read the first result — never loop, never concatenate
+      const result=e.results[0];
+      const transcript=result[0].transcript;
+      tx.textContent=transcript;
+      if(result.isFinal){
         finalText=transcript;
-        tx.textContent=finalText;
-      }else{
-        tx.textContent=transcript;
       }
     };
 
