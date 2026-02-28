@@ -91,7 +91,7 @@
 
   /* Task Bars */
   .task-bar {
-    position:relative; border-radius:var(--radius); padding:20px 54px 20px 22px;
+    position:relative; border-radius:var(--radius); padding:20px 54px 20px 38px;
     margin-bottom:12px; cursor:grab; touch-action:pan-y;
     transition:transform .2s,opacity .2s,box-shadow .2s;
     box-shadow:0 3px 10px rgba(0,0,0,.1); overflow:hidden;
@@ -120,6 +120,16 @@
     color:white; font-size:14px; font-weight:700; transition:background .15s,border-color .15s;
   }
   .task-check.checked { background:rgba(255,255,255,.4); border-color:rgba(255,255,255,.85); }
+
+  .task-del {
+    position:absolute; left:10px; top:8px;
+    width:22px; height:22px; border-radius:50%;
+    border:none; background:rgba(0,0,0,.18);
+    color:rgba(255,255,255,.8); font-size:12px; font-weight:600;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .task-del:active { background:rgba(0,0,0,.35); }
 
   /* Bottom */
   .bottom-area { flex-shrink:0; padding-top:8px; display:flex; flex-direction:column; align-items:center; gap:14px; }
@@ -251,7 +261,7 @@
     </div>
     <button class="add-circle" id="addBtn">+</button>
     <div class="cmd-bar">
-      <button class="cmd-btn" id="voiceCmd">🗣 Voice Command — "Move … up" · "Delete …"</button>
+      <button class="cmd-btn" id="voiceCmd">🗣 Voice Command — "Delete the third task" · "Move groceries up" · "Complete first task"</button>
     </div>
   </div>
 </div>
@@ -317,7 +327,7 @@ function render(){
     bar.style.animation=`taskEnter .3s ease both`;
     bar.style.animationDelay=(idx*30)+'ms';
     bar.draggable=true;bar.dataset.idx=idx;
-    bar.innerHTML=`<span class="task-label${task.done?' struck':''}">${escHtml(task.text)}</span><button class="task-check${task.done?' checked':''}" data-action="toggle">${task.done?'✓':''}</button>`;
+    bar.innerHTML=`<span class="task-label${task.done?' struck':''}">${escHtml(task.text)}</span><button class="task-del" data-action="delete">✕</button><button class="task-check${task.done?' checked':''}" data-action="toggle">${task.done?'✓':''}</button>`;
 
     bar.addEventListener('dragstart',()=>{dragSrcIdx=idx;bar.classList.add('dragging')});
     bar.addEventListener('dragend',()=>{dragSrcIdx=null;bar.classList.remove('dragging');list.querySelectorAll('.drag-over').forEach(e=>e.classList.remove('drag-over'))});
@@ -333,7 +343,7 @@ function render(){
     bar.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX},{passive:true});
     bar.addEventListener('touchend',e=>{if(tx0===null)return;const d=e.changedTouches[0].clientX-tx0;tx0=null;if(d<-100)removeTask(idx)});
 
-    bar.addEventListener('click',e=>{if(e.target.dataset.action==='toggle')toggleDone(idx)});
+    bar.addEventListener('click',e=>{if(e.target.dataset.action==='toggle')toggleDone(idx);if(e.target.dataset.action==='delete')removeTask(idx)});
     f.appendChild(bar);
   });
   list.querySelectorAll('.task-bar').forEach(e=>e.remove());
@@ -353,7 +363,6 @@ async function startListening(mode){
   // Request microphone permission first
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    // Stop the stream immediately — we just needed the permission grant
     stream.getTracks().forEach(t=>t.stop());
   }catch(err){
     if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError'){
@@ -368,34 +377,163 @@ async function startListening(mode){
     return;
   }
 
-  recognition=new SR();recognition.continuous=false;recognition.interimResults=true;recognition.lang='en-US';
+  recognition=new SR();
+  recognition.continuous=true;        // Keep listening until user stops
+  recognition.interimResults=true;
+  recognition.lang='en-US';
+  recognition.maxAlternatives=1;
+
   const ov=document.getElementById('transcriptOverlay'),lb=document.getElementById('transcriptLabel'),tx=document.getElementById('transcriptText'),mic=document.getElementById('micBtn');
 
-  recognition.onstart=()=>{listening=true;ov.style.display='';lb.innerHTML=mode==='command'?'<span class="wave">●</span> Voice Command':'<span class="wave">●</span> Listening';tx.textContent='...';if(mode==='add')mic.classList.add('listening')};
-  recognition.onresult=e=>{tx.textContent=Array.from(e.results).map(r=>r[0].transcript).join('')};
-  recognition.onend=()=>{listening=false;mic.classList.remove('listening');const ft=tx.textContent.trim();ov.style.display='none';if(mode==='add'&&ft&&ft!=='...')addTask(ft);else if(mode==='command'&&ft&&ft!=='...')processCommand(ft.toLowerCase())};
+  let silenceTimer=null;
+  let finalTranscript='';
+  let lastResultTime=Date.now();
+
+  function resetSilenceTimer(){
+    clearTimeout(silenceTimer);
+    lastResultTime=Date.now();
+    // Auto-stop after 3s of silence (gives you time to pause and think)
+    silenceTimer=setTimeout(()=>{
+      if(recognition&&listening)recognition.stop();
+    }, mode==='add'?3000:4000); // commands get more time
+  }
+
+  recognition.onstart=()=>{
+    listening=true;
+    finalTranscript='';
+    ov.style.display='';
+    lb.innerHTML=mode==='command'
+      ?'<span class="wave">●</span> Voice Command — tap overlay to stop'
+      :'<span class="wave">●</span> Listening — tap overlay to stop';
+    tx.textContent='...';
+    if(mode==='add')mic.classList.add('listening');
+    resetSilenceTimer();
+  };
+
+  recognition.onresult=e=>{
+    let interim='';
+    finalTranscript='';
+    for(let i=0;i<e.results.length;i++){
+      if(e.results[i].isFinal){
+        finalTranscript+=e.results[i][0].transcript;
+      }else{
+        interim+=e.results[i][0].transcript;
+      }
+    }
+    tx.textContent=finalTranscript||interim||'...';
+    resetSilenceTimer();
+  };
+
+  recognition.onend=()=>{
+    listening=false;
+    clearTimeout(silenceTimer);
+    mic.classList.remove('listening');
+    const ft=(finalTranscript||tx.textContent||'').trim();
+    ov.style.display='none';
+    if(mode==='add'&&ft&&ft!=='...')addTask(ft);
+    else if(mode==='command'&&ft&&ft!=='...')processCommand(ft.toLowerCase());
+  };
+
   recognition.onerror=(e)=>{
-    listening=false;mic.classList.remove('listening');ov.style.display='none';
+    // 'no-speech' is not fatal in continuous mode — just keep going
+    if(e.error==='no-speech')return;
+    listening=false;clearTimeout(silenceTimer);mic.classList.remove('listening');ov.style.display='none';
     const msgs={
       'not-allowed':'Microphone permission denied — check browser settings',
-      'no-speech':'No speech detected — try again',
       'audio-capture':'No microphone found',
       'network':'Network error — speech recognition needs internet',
       'aborted':'Voice input cancelled',
-      'service-not-allowed':'Speech service not allowed — try opening this page directly in Chrome (not inside another app)'
+      'service-not-allowed':'Speech service not allowed — try opening in Chrome directly'
     };
     flash(msgs[e.error]||'Voice error: '+e.error,'danger');
   };
 
+  // Tap the overlay to stop listening manually
+  ov.onclick=()=>{if(recognition&&listening)recognition.stop()};
+
   try{recognition.start()}catch(e){flash('Could not start voice: '+e.message,'danger')}
 }
 
+// ─── Ordinal / number word parser ──────────────────────
+function parseTaskIndex(str){
+  const s=str.replace(/^the\s+/i,'').replace(/\s*task$/i,'').trim();
+  const ordinals={
+    'first':1,'second':2,'third':3,'fourth':4,'fifth':5,
+    'sixth':6,'seventh':7,'eighth':8,'ninth':9,'tenth':10,
+    'eleventh':11,'twelfth':12,'thirteenth':13,'fourteenth':14,'fifteenth':15,
+    'sixteenth':16,'seventeenth':17,'eighteenth':18,'nineteenth':19,'twentieth':20,
+    '1st':1,'2nd':2,'3rd':3,'4th':4,'5th':5,'6th':6,'7th':7,'8th':8,'9th':9,'10th':10,
+    '11th':11,'12th':12,'13th':13,'14th':14,'15th':15,'16th':16,'17th':17,'18th':18,'19th':19,'20th':20
+  };
+  const words={
+    'one':1,'two':2,'three':3,'four':4,'five':5,
+    'six':6,'seven':7,'eight':8,'nine':9,'ten':10
+  };
+  if(ordinals[s])return ordinals[s]-1; // 0-based
+  if(words[s])return words[s]-1;
+  const num=parseInt(s);
+  if(!isNaN(num)&&num>=1&&num<=tasks.length)return num-1;
+  return -1;
+}
+
+// ─── Find task by number or name ───────────────────────
+function findTaskIndex(target){
+  const idx=parseTaskIndex(target);
+  if(idx>=0&&idx<tasks.length)return idx;
+  // Fuzzy match by text
+  const lower=target.replace(/^the\s+/i,'').replace(/\s*task$/i,'').trim();
+  return tasks.findIndex(t=>t.text.toLowerCase().includes(lower));
+}
+
 function processCommand(cmd){
+  // Normalize: remove filler words
+  cmd=cmd.replace(/\bplease\b/gi,'').replace(/\bcan you\b/gi,'').replace(/\bcould you\b/gi,'').trim();
+
+  // Move commands: "move third task up", "move groceries to top", "move 3 down"
   const m=cmd.match(/move\s+(.+?)\s+(up|down|to top|to bottom)/i);
-  if(m){const tgt=m[1],dir=m[2];let i=-1;const n=parseInt(tgt);if(!isNaN(n)&&n>=1&&n<=tasks.length)i=n-1;else i=tasks.findIndex(t=>t.text.toLowerCase().includes(tgt));if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}const[item]=tasks.splice(i,1);if(dir==='up'&&i>0){tasks.splice(i-1,0,item);flash('Moved up','success')}else if(dir==='down'&&i<tasks.length){tasks.splice(i+1,0,item);flash('Moved down','success')}else if(dir==='to top'){tasks.unshift(item);flash('Moved to top','success')}else if(dir==='to bottom'){tasks.push(item);flash('Moved to bottom','success')}else{tasks.splice(i,0,item);flash("Can't move further",'info')}saveTasks();render();return}
-  const d=cmd.match(/(delete|remove)\s+(.+)/i);
-  if(d){const tgt=d[2],i=tasks.findIndex(t=>t.text.toLowerCase().includes(tgt));if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}flash(`Removed: "${tasks[i].text}"`,'success');tasks.splice(i,1);saveTasks();render();return}
-  flash(`Unknown: "${cmd}"`,'danger');
+  if(m){
+    const tgt=m[1], dir=m[2];
+    let i=findTaskIndex(tgt);
+    if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}
+    const[item]=tasks.splice(i,1);
+    if(dir==='up'&&i>0){tasks.splice(i-1,0,item);flash(`Moved "${item.text}" up`,'success')}
+    else if(dir==='down'&&i<tasks.length){tasks.splice(i+1,0,item);flash(`Moved "${item.text}" down`,'success')}
+    else if(dir==='to top'){tasks.unshift(item);flash(`Moved "${item.text}" to top`,'success')}
+    else if(dir==='to bottom'){tasks.push(item);flash(`Moved "${item.text}" to bottom`,'success')}
+    else{tasks.splice(i,0,item);flash("Can't move further",'info')}
+    saveTasks();render();return;
+  }
+
+  // Delete commands: "delete the third task", "remove groceries", "delete task 3", "delete 2nd task"
+  const d=cmd.match(/(delete|remove|clear)\s+(.+)/i);
+  if(d){
+    const tgt=d[2];
+    let i=findTaskIndex(tgt);
+    if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}
+    flash(`Removed: "${tasks[i].text}"`,'success');
+    tasks.splice(i,1);saveTasks();render();return;
+  }
+
+  // "complete" / "finish" / "check" commands
+  const c=cmd.match(/(complete|finish|check|done)\s+(.+)/i);
+  if(c){
+    const tgt=c[2];
+    let i=findTaskIndex(tgt);
+    if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}
+    tasks[i].done=true;
+    flash(`Completed: "${tasks[i].text}"`,'success');
+    saveTasks();render();return;
+  }
+
+  // "clear all done" / "remove completed"
+  if(cmd.match(/clear\s+(all\s+)?(done|completed|finished)/i)){
+    const before=tasks.length;
+    tasks=tasks.filter(t=>!t.done);
+    flash(`Cleared ${before-tasks.length} completed tasks`,'success');
+    saveTasks();render();return;
+  }
+
+  flash(`Didn't understand: "${cmd}". Try "delete third task" or "move groceries up"`,'danger');
 }
 
 async function sendToGoogleChat(){
