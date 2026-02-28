@@ -1,9 +1,9 @@
-const CACHE_NAME = 'priority-tasks-v1';
+const CACHE_NAME = 'priority-tasks-v2';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  'https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap'
+  './',
+  './index.html',
+  './manifest.json',
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
 ];
 
 self.addEventListener('install', event => {
