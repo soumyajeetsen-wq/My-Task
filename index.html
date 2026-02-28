@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Priority Tasks</title>
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f1ed;
+    --card-bg: #ffffff;
+    --text: #1a1a2e;
+    --text-secondary: #6e6e80;
+    --text-light: #a0a0b0;
+    --border: #e8e5e0;
+    --shadow: 0 2px 12px rgba(0,0,0,0.06);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.10);
+    --radius: 16px;
+    --radius-sm: 12px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+  }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes slideDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
+  @keyframes breathe { 0%,100%{box-shadow:0 0 0 0 rgba(232,100,80,0.3)} 50%{box-shadow:0 0 0 14px rgba(232,100,80,0)} }
+  @keyframes taskEnter { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
+
+  .app {
+    display:flex; flex-direction:column; height:100vh; height:100dvh;
+    max-width:480px; margin:0 auto;
+    padding:env(safe-area-inset-top,12px) 20px env(safe-area-inset-bottom,16px);
+  }
+
+  /* Header */
+  .header { display:flex; justify-content:space-between; align-items:center; padding:16px 0 20px; flex-shrink:0; }
+  .header h1 { font-size:28px; font-weight:700; letter-spacing:-0.5px; }
+  .badge { font-size:12px; color:var(--text-light); font-weight:500; margin-top:2px; }
+  .header-btn {
+    width:40px; height:40px; border:none; border-radius:50%;
+    background:var(--card-bg); box-shadow:var(--shadow);
+    color:var(--text-secondary); font-size:18px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:transform .15s;
+  }
+  .header-btn:active { transform:scale(.92); }
+
+  /* Settings */
+  .settings {
+    background:var(--card-bg); border-radius:var(--radius); padding:18px;
+    margin-bottom:16px; box-shadow:var(--shadow); animation:slideDown .25s ease; flex-shrink:0;
+  }
+  .settings label { font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:var(--text-light); font-weight:600; display:block; margin-bottom:8px; }
+  .settings input[type="url"] {
+    width:100%; padding:12px 14px; background:var(--bg); border:1.5px solid var(--border);
+    border-radius:var(--radius-sm); color:var(--text); font-family:inherit; font-size:14px;
+  }
+  .settings input[type="url"]:focus { outline:none; border-color:#5B86E5; box-shadow:0 0 0 3px rgba(91,134,229,.15); }
+  .settings-actions { display:flex; gap:8px; margin-top:12px; }
+  .s-btn {
+    flex:1; padding:11px 14px; border:none; border-radius:var(--radius-sm); cursor:pointer;
+    font-size:13px; font-weight:600; font-family:inherit; transition:transform .1s;
+  }
+  .s-btn:active { transform:scale(.96); }
+  .s-btn.primary { background:#5B86E5; color:white; }
+  .s-btn.toggle { background:var(--bg); color:var(--text-secondary); }
+  .s-btn.toggle.active { background:#e8f5e9; color:#388e3c; }
+  .settings .hint { font-size:11px; color:var(--text-light); margin-top:10px; line-height:1.5; }
+
+  /* Task List */
+  .task-list {
+    flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
+    padding:2px 0 20px; scroll-behavior:smooth;
+  }
+  .task-list::-webkit-scrollbar { display:none; }
+
+  .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; animation:fadeIn .4s ease; }
+  .empty-icon { font-size:48px; margin-bottom:16px; }
+  .empty p { color:var(--text-light); font-size:15px; text-align:center; }
+  .empty p.sub { font-size:13px; margin-top:4px; }
+
+  /* Task Bars */
+  .task-bar {
+    position:relative; border-radius:var(--radius); padding:20px 54px 20px 22px;
+    margin-bottom:12px; cursor:grab; touch-action:pan-y;
+    transition:transform .2s,opacity .2s,box-shadow .2s;
+    box-shadow:0 3px 10px rgba(0,0,0,.1); overflow:hidden;
+  }
+  .task-bar::before {
+    content:''; position:absolute; inset:0;
+    background:linear-gradient(135deg,rgba(255,255,255,.2) 0%,transparent 60%);
+    pointer-events:none;
+  }
+  .task-bar:active { transform:scale(.97); box-shadow:var(--shadow-lg); }
+  .task-bar.dragging { opacity:.35; transform:scale(.95); }
+  .task-bar.drag-over { transform:translateY(4px); }
+  .task-bar.done-bar { opacity:.5; }
+
+  .task-label {
+    font-size:17px; font-weight:600; color:white; line-height:1.35;
+    text-shadow:0 1px 3px rgba(0,0,0,.12); word-break:break-word;
+  }
+  .task-label.struck { text-decoration:line-through; opacity:.7; }
+
+  .task-check {
+    position:absolute; right:16px; top:50%; transform:translateY(-50%);
+    width:28px; height:28px; border-radius:50%;
+    border:2.5px solid rgba(255,255,255,.5); background:rgba(255,255,255,.15);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    color:white; font-size:14px; font-weight:700; transition:background .15s,border-color .15s;
+  }
+  .task-check.checked { background:rgba(255,255,255,.4); border-color:rgba(255,255,255,.85); }
+
+  /* Bottom */
+  .bottom-area { flex-shrink:0; padding-top:8px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+
+  .input-wrapper { width:100%; position:relative; }
+  .input-wrapper input {
+    width:100%; padding:16px 54px 16px 20px;
+    background:var(--card-bg); border:1.5px solid var(--border);
+    border-radius:var(--radius); color:var(--text);
+    font-size:16px; font-family:inherit; font-weight:500;
+    box-shadow:var(--shadow); transition:border-color .2s,box-shadow .2s;
+  }
+  .input-wrapper input:focus { outline:none; border-color:#5B86E5; box-shadow:0 0 0 4px rgba(91,134,229,.12); }
+  .input-wrapper input::placeholder { color:var(--text-light); font-weight:400; }
+
+  .mic-btn {
+    position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    width:40px; height:40px; border:none; border-radius:50%;
+    background:var(--bg); color:var(--text-secondary); font-size:18px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;
+  }
+  .mic-btn:active { transform:translateY(-50%) scale(.9); }
+  .mic-btn.listening { background:#e85d50; color:white; animation:breathe 1.5s ease infinite; }
+  .mic-btn svg { width:20px; height:20px; }
+
+  .add-circle {
+    width:62px; height:62px; border:none; border-radius:50%;
+    background:linear-gradient(135deg,#5B86E5,#36D1DC);
+    color:white; font-size:34px; font-weight:300;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 20px rgba(91,134,229,.35); transition:transform .15s,box-shadow .15s;
+  }
+  .add-circle:active { transform:scale(.88); box-shadow:0 2px 10px rgba(91,134,229,.25); }
+
+  .cmd-bar { width:100%; }
+  .cmd-btn {
+    width:100%; padding:10px; border:1.5px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--card-bg); color:var(--text-secondary);
+    font-size:12px; font-weight:600; font-family:inherit; cursor:pointer; transition:transform .1s;
+  }
+  .cmd-btn:active { transform:scale(.97); }
+
+  /* Transcript Overlay */
+  .transcript-float {
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(26,26,46,.92); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+    color:white; padding:28px 36px; border-radius:22px;
+    font-size:20px; font-weight:500; text-align:center; z-index:200;
+    max-width:85vw; box-shadow:0 20px 60px rgba(0,0,0,.3); animation:fadeIn .2s ease;
+  }
+  .transcript-float .label { font-size:12px; text-transform:uppercase; letter-spacing:1.5px; color:rgba(255,255,255,.5); margin-bottom:12px; }
+  .transcript-float .wave { display:inline-block; animation:pulse .8s ease infinite; color:#e85d50; margin-right:6px; }
+
+  /* Toast */
+  .toast {
+    position:fixed; top:env(safe-area-inset-top,16px); left:50%; transform:translateX(-50%);
+    padding:12px 24px; border-radius:50px; font-size:14px; font-weight:600;
+    z-index:999; pointer-events:none; max-width:85vw; text-align:center;
+    font-family:inherit; animation:slideDown .25s ease;
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  }
+  .toast.success { background:rgba(56,142,60,.9); color:white; }
+  .toast.danger { background:rgba(232,93,80,.9); color:white; }
+  .toast.info { background:rgba(91,134,229,.9); color:white; }
+
+  /* Install */
+  .install-banner {
+    position:fixed; bottom:0; left:0; right:0;
+    padding:16px 20px calc(env(safe-area-inset-bottom,12px)+8px);
+    background:var(--card-bg); border-top:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; gap:12px; z-index:100;
+    animation:fadeUp .3s ease; box-shadow:0 -4px 20px rgba(0,0,0,.06);
+  }
+  .install-banner p { font-size:14px; font-weight:500; }
+  .install-go {
+    padding:11px 22px; background:linear-gradient(135deg,#5B86E5,#36D1DC);
+    color:white; border:none; border-radius:50px; font-size:14px; font-weight:600;
+    cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .install-dismiss { background:none; border:none; color:var(--text-light); font-size:22px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast" style="display:none"></div>
+<div id="transcriptOverlay" class="transcript-float" style="display:none">
+  <div class="label" id="transcriptLabel"><span class="wave">●</span> Listening</div>
+  <div id="transcriptText"></div>
+</div>
+
+<div class="app">
+  <div class="header">
+    <div>
+      <h1>My Tasks</h1>
+      <div class="badge" id="subtitle">No tasks yet</div>
+    </div>
+    <button class="header-btn" id="settingsToggle">⚙️</button>
+  </div>
+
+  <div class="settings" id="settingsPanel" style="display:none">
+    <label>Google Chat Webhook</label>
+    <input type="url" id="webhookInput" placeholder="https://chat.googleapis.com/v1/spaces/...">
+    <label style="margin-top:12px">Auto-Sync URL <span style="font-size:10px;text-transform:none;letter-spacing:0;color:var(--text-light)">(from Google Apps Script)</span></label>
+    <input type="url" id="syncInput" placeholder="https://script.google.com/macros/s/...">
+    <div class="settings-actions">
+      <button class="s-btn toggle" id="schedulerToggle">⏰ 11 AM: Off</button>
+      <button class="s-btn primary" id="sendNow">Send Now</button>
+    </div>
+    <div id="syncStatus" style="font-size:11px;color:var(--text-light);margin-top:8px"></div>
+    <p class="hint">Paste your Google Chat webhook for manual send. Paste the Apps Script URL for automatic 11 AM delivery (even when the app is closed).</p>
+  </div>
+
+  <div class="task-list" id="taskList">
+    <div class="empty" id="emptyState">
+      <div class="empty-icon">✨</div>
+      <p>Your day is clear</p>
+      <p class="sub">Add a task below to get started</p>
+    </div>
+  </div>
+
+  <div class="bottom-area">
+    <div class="input-wrapper">
+      <input type="text" id="taskInput" placeholder="Add your task" enterkeyhint="done">
+      <button class="mic-btn" id="micBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="1" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+    </div>
+    <button class="add-circle" id="addBtn">+</button>
+    <div class="cmd-bar">
+      <button class="cmd-btn" id="voiceCmd">🗣 Voice Command — "Move … up" · "Delete …"</button>
+    </div>
+  </div>
+</div>
+
+<div class="install-banner" id="installBanner" style="display:none">
+  <p>📲 Add to Home Screen</p>
+  <button class="install-go" id="installBtn">Install</button>
+  <button class="install-dismiss" id="installDismiss">×</button>
+</div>
+
+<script>
+const COLORS = [
+  '#5B86E5','#F5A867','#E88CB2','#6CC4A1','#9B8FE4',
+  '#E8805A','#5CC2D3','#E4C76B','#7BAAF7','#D48CE8'
+];
+
+let tasks=[], schedulerActive=false, schedulerInterval=null, dragSrcIdx=null, listening=false, recognition=null;
+
+const DB='PriorityTasksDB', ST='kv';
+function openDB(){return new Promise((r,j)=>{const q=indexedDB.open(DB,1);q.onupgradeneeded=()=>q.result.createObjectStore(ST);q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)})}
+async function dbGet(k){const d=await openDB();return new Promise(r=>{const t=d.transaction(ST,'readonly'),q=t.objectStore(ST).get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(null)})}
+async function dbSet(k,v){const d=await openDB();return new Promise(r=>{const t=d.transaction(ST,'readwrite');t.objectStore(ST).put(v,k);t.oncomplete=()=>r()})}
+
+async function loadData(){
+  try{const t=await dbGet('tasks');if(t)tasks=JSON.parse(t)}catch{}
+  try{const w=await dbGet('webhook');if(w)document.getElementById('webhookInput').value=w}catch{}
+  try{const s=await dbGet('syncUrl');if(s)document.getElementById('syncInput').value=s}catch{}
+  render();
+}
+async function saveTasks(){try{await dbSet('tasks',JSON.stringify(tasks))}catch{};syncToServer()}
+async function saveWebhook(u){try{await dbSet('webhook',u)}catch{}}
+async function saveSyncUrl(u){try{await dbSet('syncUrl',u)}catch{}}
+
+async function syncToServer(){
+  const url=document.getElementById('syncInput')?.value?.trim();
+  if(!url)return;
+  const status=document.getElementById('syncStatus');
+  try{
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks}),mode:'no-cors'});
+    if(status)status.textContent='✅ Synced '+new Date().toLocaleTimeString();
+  }catch(e){
+    if(status)status.textContent='⚠️ Sync failed — check URL';
+  }
+}
+
+let toastTimer;
+function flash(m,t='info'){const e=document.getElementById('toast');e.textContent=m;e.className='toast '+t;e.style.display='';clearTimeout(toastTimer);toastTimer=setTimeout(()=>e.style.display='none',2500)}
+
+function getColor(i){return COLORS[i%COLORS.length]}
+function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function render(){
+  const list=document.getElementById('taskList'),empty=document.getElementById('emptyState'),sub=document.getElementById('subtitle');
+  const done=tasks.filter(t=>t.done).length;
+  sub.textContent=tasks.length===0?'No tasks yet':`${tasks.length} task${tasks.length!==1?'s':''} · ${done} done`;
+  if(tasks.length===0){empty.style.display='';list.querySelectorAll('.task-bar').forEach(e=>e.remove());return}
+  empty.style.display='none';
+  const f=document.createDocumentFragment();
+  tasks.forEach((task,idx)=>{
+    const bar=document.createElement('div');
+    bar.className='task-bar'+(task.done?' done-bar':'');
+    bar.style.background=getColor(task.ci??idx);
+    bar.style.animation=`taskEnter .3s ease both`;
+    bar.style.animationDelay=(idx*30)+'ms';
+    bar.draggable=true;bar.dataset.idx=idx;
+    bar.innerHTML=`<span class="task-label${task.done?' struck':''}">${escHtml(task.text)}</span><button class="task-check${task.done?' checked':''}" data-action="toggle">${task.done?'✓':''}</button>`;
+
+    bar.addEventListener('dragstart',()=>{dragSrcIdx=idx;bar.classList.add('dragging')});
+    bar.addEventListener('dragend',()=>{dragSrcIdx=null;bar.classList.remove('dragging');list.querySelectorAll('.drag-over').forEach(e=>e.classList.remove('drag-over'))});
+    bar.addEventListener('dragover',e=>{e.preventDefault();bar.classList.add('drag-over')});
+    bar.addEventListener('dragleave',()=>bar.classList.remove('drag-over'));
+    bar.addEventListener('drop',e=>{e.preventDefault();bar.classList.remove('drag-over');if(dragSrcIdx!==null&&dragSrcIdx!==idx)moveTask(dragSrcIdx,idx)});
+
+    let ty0=null;
+    bar.addEventListener('touchstart',e=>{ty0=e.touches[0].clientY},{passive:true});
+    bar.addEventListener('touchend',e=>{if(ty0===null)return;const d=e.changedTouches[0].clientY-ty0;ty0=null;if(Math.abs(d)>50){const n=idx+(d<0?-1:1);if(n>=0&&n<tasks.length)moveTask(idx,n)}});
+
+    let tx0=null;
+    bar.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX},{passive:true});
+    bar.addEventListener('touchend',e=>{if(tx0===null)return;const d=e.changedTouches[0].clientX-tx0;tx0=null;if(d<-100)removeTask(idx)});
+
+    bar.addEventListener('click',e=>{if(e.target.dataset.action==='toggle')toggleDone(idx)});
+    f.appendChild(bar);
+  });
+  list.querySelectorAll('.task-bar').forEach(e=>e.remove());
+  list.appendChild(f);
+}
+
+function addTask(text){const t=text.trim();if(!t)return;tasks.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),text:t,done:false,ci:tasks.length});saveTasks();render();flash(`Added: "${t}"`,'success');document.getElementById('taskInput').value='';setTimeout(()=>{document.getElementById('taskList').scrollTop=9999},100)}
+function removeTask(i){const n=tasks[i]?.text;tasks.splice(i,1);saveTasks();render();flash(`Removed: "${n}"`,'info')}
+function toggleDone(i){tasks[i].done=!tasks[i].done;saveTasks();render()}
+function moveTask(a,b){const[item]=tasks.splice(a,1);tasks.splice(b,0,item);saveTasks();render()}
+
+async function startListening(mode){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){flash('Speech recognition not supported — open in Chrome','danger');return}
+  if(listening&&recognition){recognition.stop();return}
+
+  // Request microphone permission first
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    // Stop the stream immediately — we just needed the permission grant
+    stream.getTracks().forEach(t=>t.stop());
+  }catch(err){
+    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError'){
+      flash('Microphone blocked — tap the lock icon in your browser address bar to allow mic access','danger');
+    }else if(err.name==='NotFoundError'){
+      flash('No microphone found on this device','danger');
+    }else if(err.name==='NotReadableError'){
+      flash('Microphone is in use by another app','danger');
+    }else{
+      flash('Microphone error: '+err.message,'danger');
+    }
+    return;
+  }
+
+  recognition=new SR();recognition.continuous=false;recognition.interimResults=true;recognition.lang='en-US';
+  const ov=document.getElementById('transcriptOverlay'),lb=document.getElementById('transcriptLabel'),tx=document.getElementById('transcriptText'),mic=document.getElementById('micBtn');
+
+  recognition.onstart=()=>{listening=true;ov.style.display='';lb.innerHTML=mode==='command'?'<span class="wave">●</span> Voice Command':'<span class="wave">●</span> Listening';tx.textContent='...';if(mode==='add')mic.classList.add('listening')};
+  recognition.onresult=e=>{tx.textContent=Array.from(e.results).map(r=>r[0].transcript).join('')};
+  recognition.onend=()=>{listening=false;mic.classList.remove('listening');const ft=tx.textContent.trim();ov.style.display='none';if(mode==='add'&&ft&&ft!=='...')addTask(ft);else if(mode==='command'&&ft&&ft!=='...')processCommand(ft.toLowerCase())};
+  recognition.onerror=(e)=>{
+    listening=false;mic.classList.remove('listening');ov.style.display='none';
+    const msgs={
+      'not-allowed':'Microphone permission denied — check browser settings',
+      'no-speech':'No speech detected — try again',
+      'audio-capture':'No microphone found',
+      'network':'Network error — speech recognition needs internet',
+      'aborted':'Voice input cancelled',
+      'service-not-allowed':'Speech service not allowed — try opening this page directly in Chrome (not inside another app)'
+    };
+    flash(msgs[e.error]||'Voice error: '+e.error,'danger');
+  };
+
+  try{recognition.start()}catch(e){flash('Could not start voice: '+e.message,'danger')}
+}
+
+function processCommand(cmd){
+  const m=cmd.match(/move\s+(.+?)\s+(up|down|to top|to bottom)/i);
+  if(m){const tgt=m[1],dir=m[2];let i=-1;const n=parseInt(tgt);if(!isNaN(n)&&n>=1&&n<=tasks.length)i=n-1;else i=tasks.findIndex(t=>t.text.toLowerCase().includes(tgt));if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}const[item]=tasks.splice(i,1);if(dir==='up'&&i>0){tasks.splice(i-1,0,item);flash('Moved up','success')}else if(dir==='down'&&i<tasks.length){tasks.splice(i+1,0,item);flash('Moved down','success')}else if(dir==='to top'){tasks.unshift(item);flash('Moved to top','success')}else if(dir==='to bottom'){tasks.push(item);flash('Moved to bottom','success')}else{tasks.splice(i,0,item);flash("Can't move further",'info')}saveTasks();render();return}
+  const d=cmd.match(/(delete|remove)\s+(.+)/i);
+  if(d){const tgt=d[2],i=tasks.findIndex(t=>t.text.toLowerCase().includes(tgt));if(i===-1){flash(`Can't find: "${tgt}"`,'danger');return}flash(`Removed: "${tasks[i].text}"`,'success');tasks.splice(i,1);saveTasks();render();return}
+  flash(`Unknown: "${cmd}"`,'danger');
+}
+
+async function sendToGoogleChat(){
+  const url=document.getElementById('webhookInput').value.trim();
+  if(!url){flash('Set webhook URL in settings','danger');return}
+  const now=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const body=tasks.length?tasks.map((t,i)=>`${i+1}. ${t.done?'✅':'⬜'} ${t.text}`).join('\n'):'No tasks!';
+  try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json;charset=UTF-8'},body:JSON.stringify({text:`📋 *Priority Tasks — ${now}*\n\n${body}\n\n_${tasks.filter(t=>!t.done).length} remaining_`})});flash(r.ok?'Sent to Google Chat!':'Send failed',r.ok?'success':'danger')}catch{flash('Network error','danger')}
+}
+function updateScheduler(){clearInterval(schedulerInterval);if(!schedulerActive)return;schedulerInterval=setInterval(()=>{const n=new Date();if(n.getHours()===11&&n.getMinutes()===0)sendToGoogleChat()},60000)}
+
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;document.getElementById('installBanner').style.display=''});
+
+document.addEventListener('DOMContentLoaded',()=>{
+  loadData();
+  document.getElementById('addBtn').addEventListener('click',()=>addTask(document.getElementById('taskInput').value));
+  document.getElementById('taskInput').addEventListener('keydown',e=>{if(e.key==='Enter')addTask(e.target.value)});
+  document.getElementById('micBtn').addEventListener('click',()=>startListening('add'));
+  document.getElementById('voiceCmd').addEventListener('click',()=>startListening('command'));
+  document.getElementById('settingsToggle').addEventListener('click',()=>{const p=document.getElementById('settingsPanel');p.style.display=p.style.display==='none'?'':'none'});
+  document.getElementById('webhookInput').addEventListener('change',e=>saveWebhook(e.target.value));
+  document.getElementById('syncInput').addEventListener('change',e=>{saveSyncUrl(e.target.value);syncToServer()});
+  document.getElementById('schedulerToggle').addEventListener('click',function(){schedulerActive=!schedulerActive;this.textContent=schedulerActive?'⏰ 11 AM: On':'⏰ 11 AM: Off';this.classList.toggle('active',schedulerActive);updateScheduler()});
+  document.getElementById('sendNow').addEventListener('click',sendToGoogleChat);
+  document.getElementById('installBtn')?.addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();const{outcome}=await deferredPrompt.userChoice;if(outcome==='accepted')document.getElementById('installBanner').style.display='none';deferredPrompt=null});
+  document.getElementById('installDismiss')?.addEventListener('click',()=>{document.getElementById('installBanner').style.display='none'});
+});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
